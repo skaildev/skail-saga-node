@@ -1,0 +1,21 @@
+{
+  "name": "@skail-saga/worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "gen-config": "node scripts/gen-config.mjs",
+    "build": "pnpm run gen-config && tsc -p tsconfig.json && pnpm run build:skail",
+    "build:skail": "skail build src/skail-functions.ts --workload \"${SKAIL_WORKLOAD:-$(node scripts/workload.mjs)}\" --out .skail/skail-functions.mjs --manifest .skail/manifest.json",
+    "start": "node --enable-source-maps dist/main.js",
+    "typecheck": "pnpm run gen-config && tsc -p tsconfig.json --noEmit",
+    "test": "pnpm run gen-config && vitest run"
+  },
+  "dependencies": {
+    "@skail-saga/contracts": "workspace:*",
+    "@skail/runtime": "2.0.1-rc1"
+  },
+  "devDependencies": {
+    "@skail/build": "2.0.0",
+    "@skail/testing": "2.0.1-rc1"
+  }
+}

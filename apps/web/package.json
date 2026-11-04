@@ -1,0 +1,16 @@
+{
+  "name": "@skail-saga/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node --enable-source-maps dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@skail-saga/contracts": "workspace:*",
+    "@fastify/static": "^8.0.0",
+    "fastify": "^5.0.0"
+  }
+}

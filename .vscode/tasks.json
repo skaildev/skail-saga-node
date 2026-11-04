@@ -1,0 +1,65 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "type": "shell",
+      "command": "pnpm build",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": "$tsc"
+    },
+    {
+      "label": "build (local debug)",
+      "detail": "The skail bundle cannot read environment variables: fixes the localhost web address for debugging outside containers",
+      "type": "shell",
+      "command": "pnpm build",
+      "options": { "env": { "WEB_BASE_URL": "http://localhost:8080" } },
+      "problemMatcher": "$tsc"
+    },
+    {
+      "label": "test",
+      "type": "shell",
+      "command": "pnpm test",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "dev: front end (vite)",
+      "type": "shell",
+      "command": "pnpm --filter @skail-saga/frontend dev",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "containers: up",
+      "type": "shell",
+      "command": "scripts/run.sh up",
+      "problemMatcher": []
+    },
+    {
+      "label": "containers: down",
+      "type": "shell",
+      "command": "scripts/run.sh down",
+      "problemMatcher": []
+    },
+    {
+      "label": "containers: kill-worker",
+      "type": "shell",
+      "command": "scripts/run.sh kill-worker",
+      "problemMatcher": []
+    },
+    {
+      "label": "containers: start-worker",
+      "type": "shell",
+      "command": "scripts/run.sh start-worker",
+      "problemMatcher": []
+    },
+    {
+      "label": "containers: logs",
+      "type": "shell",
+      "command": "scripts/run.sh logs",
+      "isBackground": true,
+      "problemMatcher": []
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Worker",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "build (local debug)",
+      "program": "${workspaceFolder}/apps/worker/dist/main.js",
+      "cwd": "${workspaceFolder}/apps/worker",
+      "runtimeArgs": ["--enable-source-maps"],
+      "envFile": "${workspaceFolder}/.env",
+      // needed for breakpoints inside commands
+      "autoAttachChildProcesses": true,
+      "skipFiles": ["<node_internals>/**"],
+      "console": "internalConsole"
+    },
+    {
+      "name": "Web",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/apps/web/dist/main.js",
+      "cwd": "${workspaceFolder}/apps/web",
+      "runtimeArgs": ["--enable-source-maps"],
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PORT": "8080",
+        "HOST": "127.0.0.1"
+      },
+      "skipFiles": ["<node_internals>/**"],
+      "console": "internalConsole"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Worker + Web",
+      "configurations": ["Web", "Worker"],
+      "stopAll": true
+    }
+  ]
+}
