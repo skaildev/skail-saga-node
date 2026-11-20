@@ -1,0 +1,121 @@
+# skail saga (Node.js)
+
+[Português (Brasil)](README.pt-BR.md)
+
+An app with a skail function that closes an order: it reserves the stock, charges the card and issues the invoice. When a step does not work out, it undoes the previous ones in reverse order. You place the orders on a page the app serves at http://localhost:8080.
+
+It shows three skail features:
+
+- the **saga** pattern: each step and each compensation is a command, and the compensations run in reverse order;
+- **automatic retries**: the first charge attempt of every order times out, and skail tries again by itself;
+- **durability**: close the app in the middle of an order, start it again and the order goes on from where it was, without reserving the stock or charging the card twice.
+
+## Requirements
+
+- One of: [Docker](https://docs.docker.com/get-docker/), [Podman](https://podman.io/docs/installation) or [Node.js](https://nodejs.org) 20.12 or newer. The run script uses the first one it finds.
+- A skail environment with a workload registered for the `SKAIL_WORKLOAD` in `.env` (`demosaga:v1.0.0` by default). The [Quickstart](https://docs.skail.dev/comece-aqui/quickstart) shows how to create the account, the environment and the workload.
+
+The project uses `@skail/runtime` and `@skail/build` **2.0.1-rc4**.
+
+## Run
+
+```bash
+cp .env.example .env      # fill in SKAIL_SIDECAR, SKAIL_NAMESPACE and SKAIL_KEY (portal > Environments & keys > Connect)
+scripts/run.sh            # then open http://localhost:8080
+scripts/run.sh resume     # keeps the state the app left: finishes the orders left in the middle
+```
+
+On Windows, in PowerShell: `copy .env.example .env`, then `powershell -ExecutionPolicy Bypass -File scripts\run.ps1` with the same arguments. The script works on the Windows PowerShell built into Windows; PowerShell 7 is not needed.
+
+The script runs the demo with what the machine has: Docker, then Podman, then Node.js. If it finds none of them, it says what to install. Without the script, the commands are `npm install`, `npm run build` and `npm start` (with the arguments after `--`, as in `npm start -- <argument>`).
+
+![The demo page](docs/page.png)
+
+Each step the commands take shows up on the page, under **What happened**, and in the console. Lines with ↩ are compensations. The new charge attempt comes about 15 seconds after the timeout. The page refreshes itself every second.
+
+## The four paths
+
+| What you click | Order | What happens | Result |
+|---|---|---|---|
+| **Confirmed** | 1 Monitor | reserved, timeout, charged, invoice issued | `confirmed` |
+| **Card declined** | 1 Monitor, card `…0002` | reserved, timeout, declined, ↩ stock released | `payment declined` |
+| **Invoice rejected** | 2 Cabo HDMI | reserved, timeout, charged, invoice rejected, ↩ refunded, ↩ stock released | `cancelled with refund` |
+| **Out of stock** | 6 Monitors (5 in stock) | out of stock | `out of stock` |
+
+**Place one order per path** places the four at once, and **Reset stock** puts the stock back. The simulated services are set up for these paths: the first charge attempt of every order times out, a card ending in `0002` is declined, and only `Monitor` and `Teclado` have a tax registration, so any other product gets its invoice rejected.
+
+## How it works
+
+The app does three jobs in one process: it serves the page, it hosts the worker that runs the function (`createSkailPlatform`, with the bundle built by `npm run build`), and it places the orders and starts one run per order through the skail HTTP API. The simulated services (stock, payment gateway and invoice issuer) live in the same process and report each effect to a timeline the page shows. The commands run in an isolated VM, so they reach the simulated services over HTTP, on the app's own port under `/internal/`, as they would reach real services.
+
+```http
+POST {SKAIL_SIDECAR}/api/v1/trigger/demosaga/v1.0.0/CloseOrder/{runId}
+[{"id": "P-10", "product": "Monitor", "quantity": 1, "amount": 1200}]
+```
+
+The function, in [`src/saga-functions.ts`](src/saga-functions.ts):
+
+```ts
+@SkailFunction()
+async CloseOrder(order: Order): Promise<string> {
+  const reservation = await this.ReserveStock(order.id, order.product, order.quantity);
+  if (!reservation.confirmed) return this.ReportResult(order.id, SagaResults.outOfStock);
+
+  const charge = await this.ChargeCard(order.id, order.amount);
+  if (!charge.approved) {
+    await this.ReleaseStock(reservation.id!);
+    return this.ReportResult(order.id, SagaResults.paymentDeclined);
+  }
+
+  const invoice = await this.IssueInvoice(order.id, order.product, order.amount);
+  if (!invoice.authorized) {
+    await this.RefundCharge(charge.id!); // reverse order: the refund first,
+    await this.ReleaseStock(reservation.id!); // then the stock
+    return this.ReportResult(order.id, SagaResults.cancelledWithRefund);
+  }
+
+  return this.ReportResult(order.id, SagaResults.confirmed);
+}
+```
+
+- What the business refuses (no stock, a declined card, a rejected invoice) comes back as a result, and the function handles it with an `if`. Another attempt would not change the answer, so it is not an exception.
+- A gateway timeout throws, and skail runs `ChargeCard` again (`@SkailCommand({ retryCount: 3 })`). The order id is the idempotency key, so a new attempt does not charge twice.
+- The compensations (`RefundCharge`, `ReleaseStock`) are commands too: if the app stops in the middle of them, the ones that already ran do not run again.
+- The function receives the order without the card. The simulated store keeps the card on file and the gateway charges it by order id, so the card number never goes into the run history or the Monitor.
+
+| File | What it has |
+|---|---|
+| `src/saga-functions.ts` | The function and its commands. |
+| `src/simulated-services.ts` | The simulated stock, payment gateway and invoice issuer. |
+| `src/demo-orders.ts` | The order of each path. |
+| `src/order-desk.ts` | Places the orders for the page and starts one run for each. |
+| `src/timeline.ts` | The timeline of the steps, for the console and the page. |
+| `page/index.html` | The page, with the skail branding. |
+| `src/skail-api.ts` | The trigger through the skail HTTP API. |
+| `src/main.ts` | Reads `.env` and the argument, serves the page, its API and the simulated services, and starts the worker. |
+| `scripts/build-skail.mjs` | Builds the bundle into `.skail/` for `SKAIL_WORKLOAD`; run `npm run build` again if it changes. |
+| `scripts/run.sh`, `scripts/run.ps1`, `Dockerfile` | Run the demo with Docker, Podman or Node.js, whatever the machine has. |
+
+## See the durability
+
+1. Run `scripts/run.sh`, open the page, click **Confirmed** and wait for `gateway: no answer in time`.
+2. Before the new attempt, about 15 seconds later, press **Ctrl+C**. The app closes; the run stays in skail.
+3. Run `scripts/run.sh resume` and open the page again. The order goes on from the charge: the stock is not reserved again, and the card is charged once.
+
+The simulated services keep their state in `.saga-demo.json`, so it survives the restart. `scripts/run.sh` without `resume` starts over, with full stock.
+
+In the portal, open the [Monitor](https://docs.skail.dev/referencia/portal/monitor) of your environment and click a run: on the **Invoice rejected** path, `RefundCharge` and `ReleaseStock` come after `IssueInvoice`, in reverse order, and the timeout shows up as a failed attempt of `ChargeCard`. The card number does not show up anywhere.
+
+## Notes
+
+- A saga is not a transaction: between the charge and the refund, the customer was charged. What the function guarantees is that the compensations run, in reverse order, even if the app stops in the middle.
+- Here the simulated services always answer in the end. In your system, a service can stay down longer than the retries; see [handling errors and undoing steps](https://docs.skail.dev/construa/como-fazer/tratar-erros-e-desfazer-passos) for undoing the previous steps in that case.
+- Apps running the same `SKAIL_WORKLOAD` on the same environment share the same runs: use one workload (or environment) per person.
+
+## Disclaimer
+
+**This is a demo, not production code.** It exists only to show how [skail](https://docs.skail.dev) works and is provided "as is", without warranty of any kind. The stock, the payment gateway and the invoice issuer are simulated, and the card numbers are test numbers: never use a real card in it.
+
+## License
+
+[Apache-2.0](LICENSE)
